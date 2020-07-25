@@ -1,0 +1,410 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  NewPostFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: "sam-new-post-XXXXXX"
+      CodeUri: new_post/
+      Handler: app.lambda_handler
+      Role: !GetAtt LambdaServiceRole.Arn
+      Runtime: python3.8
+      Tracing: "Active"
+      Policies: AmazonDynamoDBFullAccess
+#      Events:
+#        HttpPostFuncMine:
+#          Type: Api
+#          Properties:
+#            Path: /
+#            Method: post
+      Environment:
+        Variables:
+          DB_TABLE_NAME: !Ref DynamoDBTable
+          SNS_TOPIC: !Ref SNSTopic
+
+  GetPostsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: "sam-get-post-XXXXXX"
+      CodeUri: get_post/
+      Handler: app.lambda_handler
+      Role: !GetAtt LambdaServiceRole.Arn
+      Runtime: python3.8
+      Tracing: "Active"
+      Policies: AmazonDynamoDBFullAccess
+#      Events:
+#        HttpGetFuncMine:
+#          Type: Api
+#          Properties:
+#            Path: /
+#            Method: get
+      Environment:
+        Variables:
+          DB_TABLE_NAME: !Ref DynamoDBTable
+
+
+  AudioPostsApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: AudioPostsApi
+      Description: API used for Getting posts
+      FailOnWarnings: true
+      EndpointConfiguration:
+        Types:
+           - REGIONAL
+
+  GetPostsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - GetPostsFunction
+        - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+        - ''
+        - - 'arn:aws-cn:execute-api:'
+          - Ref: AWS::Region
+          - ":"
+          - Ref: AWS::AccountId
+          - ":"
+          - Ref: AudioPostsApi
+          - "/*"
+
+  NewPostPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:invokeFunction
+      FunctionName:
+        Fn::GetAtt:
+        - NewPostFunction
+        - Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Join:
+        - ''
+        - - 'arn:aws-cn:execute-api:'
+          - Ref: AWS::Region
+          - ":"
+          - Ref: AWS::AccountId
+          - ":"
+          - Ref: AudioPostsApi
+          - "/*"
+
+  ApiGatewayCloudWatchLogsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - apigateway.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Policies:
+      - PolicyName: ApiGatewayLogsPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:DescribeLogGroups
+            - logs:DescribeLogStreams
+            - logs:PutLogEvents
+            - logs:GetLogEvents
+            - logs:FilterLogEvents
+            Resource: "*"
+
+  ApiGatewayAccount:
+    Type: AWS::ApiGateway::Account
+    Properties:
+      CloudWatchRoleArn:
+        Fn::GetAtt:
+        - ApiGatewayCloudWatchLogsRole
+        - Arn
+
+  GetPostsDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+    - GetPostsRequest
+    - NewPostRequest
+    Properties:
+      RestApiId:
+        Ref: AudioPostsApi
+      StageName: prod
+
+  AudioPostsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+     RestApiId:
+       Ref: AudioPostsApi
+     ParentId:
+       Fn::GetAtt:
+       - AudioPostsApi
+       - RootResourceId
+     PathPart: audios
+
+  GetPostsRequest:
+    DependsOn: GetPostsPermission
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri:
+          Fn::Join:
+          - ''
+          - - 'arn:aws-cn:apigateway:'
+            - Ref: AWS::Region
+            - ":lambda:path/2015-03-31/functions/"
+            - Fn::GetAtt:
+              - GetPostsFunction
+              - Arn
+            - "/invocations"
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        RequestTemplates:
+          application/json:
+            Fn::Join:
+            - ''
+            - - "{"
+              - '"postId": "$input.params(''postId'')"'
+              - "}"
+        PassthroughBehavior: WHEN_NO_TEMPLATES
+      RequestParameters:
+        method.request.querystring.postId: false
+      ResourceId:
+        Ref: AudioPostsResource
+      RestApiId:
+        Ref: AudioPostsApi
+      MethodResponses:
+      - StatusCode: 200
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: false
+
+  GetPostsOptionRequest:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      RestApiId:
+        Ref: AudioPostsApi
+      ResourceId:
+        Ref: AudioPostsResource
+      HttpMethod: OPTIONS
+      Integration:
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+            method.response.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+        PassthroughBehavior: WHEN_NO_MATCH
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        Type: MOCK
+      MethodResponses:
+      - StatusCode: 200
+        ResponseModels:
+          application/json: 'Empty'
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  NewPostRequest:
+    DependsOn: GetPostsPermission
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri:
+          Fn::Join:
+          - ''
+          - - 'arn:aws-cn:apigateway:'
+            - Ref: AWS::Region
+            - ":lambda:path/2015-03-31/functions/"
+            - Fn::GetAtt:
+              - NewPostFunction
+              - Arn
+            - "/invocations"
+        IntegrationResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: "'*'"
+          ResponseTemplates:
+            application/json: ''
+      RequestParameters:
+        method.request.querystring.postId: false
+      ResourceId:
+        Ref: AudioPostsResource
+      RestApiId:
+        Ref: AudioPostsApi
+      MethodResponses:
+      - StatusCode: 200
+        ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: false
+
+  ConvertToAudioFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+       FunctionName: "sam-convert-to-audio-XXXXXX"
+       CodeUri: convert_to_audio/
+       Handler: app.lambda_handler
+       Role: !GetAtt LambdaServiceRole.Arn
+       Runtime: python3.8
+       Policies: AmazonDynamoDBFullAccess
+       MemorySize: 512
+       Timeout: 300
+       Tracing: "Active"
+       Events:
+         SNSTopic:
+           Type: SNS
+           Properties:
+             Topic:
+               Ref: SNSTopic
+       Environment:
+         Variables:
+           DB_TABLE_NAME: !Ref DynamoDBTable
+           BUCKET_NAME: !Ref S3Bucket
+
+
+  LambdaServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "sam-role-XXXXXX"
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+  LambdaServicePolicies:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: "sam-policy"
+      Roles:
+      - !Ref LambdaServiceRole
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Action: "*"
+            Resource: "*"
+
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: "sam-dynamodb-XXXXXX"
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: "sam-demo-audio-XXXXXX"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+
+  S3WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: "sam-demo-web-XXXXXX"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  WEBBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket:
+        Ref: "S3WebBucket"
+      PolicyDocument:
+        Statement:
+          -
+            Action:
+              - "s3:GetObject"
+            Effect: "Allow"
+            Resource:
+              Fn::Join:
+                - ""
+                -
+                  - "arn:aws-cn:s3:::"
+                  -
+                    Ref: "S3WebBucket"
+                  - "/*"
+            Principal: "*"
+            Condition:
+              IpAddress:
+                aws:SourceIp:
+                  - "54.222.61.0/24"
+                
+  SNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: "sam-sns-XXXXXX"
+      Subscription:
+        - Endpoint:
+            Fn::GetAtt:
+              - "ConvertToAudioFunction"
+              - "Arn"
+          Protocol: "lambda"
+
+Outputs:
+  Role:
+   Description: Role Name
+   Value: !GetAtt LambdaServiceRole.Arn
+  Table:
+    Description: DynamoDBTable Name
+    Value: !GetAtt DynamoDBTable.Arn
+  SNSTopic:
+    Description: SNS Topic Name
+    Value: !Ref SNSTopic
+  S3Bucket:
+   Description: S3Bucket to store audio files
+   Value: !GetAtt S3Bucket.Arn
+  S3WebBucket:
+   Description: Static website
+   Value: !Ref S3WebBucket
+  AudioPostsApi:
+   Description: AudioPostsApi Name
+   Value: !Ref AudioPostsApi
