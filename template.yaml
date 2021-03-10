@@ -268,7 +268,7 @@ Resources:
        CodeUri: convert_to_audio/
        Handler: app.lambda_handler
        Role: !GetAtt LambdaServiceRole.Arn
-       Runtime: python3.8
+       Runtime: python3.7
        Policies: AmazonDynamoDBFullAccess
        MemorySize: 512
        Timeout: 300
