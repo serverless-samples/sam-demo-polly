@@ -8,7 +8,7 @@ Resources:
       CodeUri: new_post/
       Handler: app.lambda_handler
       Role: !GetAtt LambdaServiceRole.Arn
-      Runtime: python3.8
+      Runtime: python3.7
       Tracing: "Active"
       Policies: AmazonDynamoDBFullAccess
 #      Events:
@@ -29,7 +29,7 @@ Resources:
       CodeUri: get_post/
       Handler: app.lambda_handler
       Role: !GetAtt LambdaServiceRole.Arn
-      Runtime: python3.8
+      Runtime: python3.7
       Tracing: "Active"
       Policies: AmazonDynamoDBFullAccess
 #      Events:
