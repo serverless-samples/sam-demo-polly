@@ -18,6 +18,8 @@ export suffix=`date +"%Y%m%d"`
 
 ```sh
 git clone https://github.com/serverless-samples/sam-demo-polly sam-demo-$suffix
+cd sam-demo-$suffix
+git checkout python3.7
 ```
 
 ## Step 4 : Update Template YAML!
@@ -29,7 +31,6 @@ sed "s/XXXXXX/${suffix}/g" template.yaml > template-${suffix}.yaml
 ## Step 5 : Build it!
 
 ```sh
-cd sam-demo-$suffix
 sam build -t template-${suffix}.yaml --profile sam-demo 
 ```
 
