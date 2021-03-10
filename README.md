@@ -17,9 +17,8 @@ export suffix=`date +"%Y%m%d"`
 ## Step 3 : SHOW ME THE CODE!
 
 ```sh
-git clone https://github.com/serverless-samples/sam-demo-polly sam-demo-$suffix
+git clone https://github.com/serverless-samples/sam-demo-polly --branch python3.7 sam-demo-$suffix
 cd sam-demo-$suffix
-git checkout python3.7
 ```
 
 ## Step 4 : Update Template YAML!
